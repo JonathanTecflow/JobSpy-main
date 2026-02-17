@@ -40,6 +40,9 @@ class Indeed(Scraper):
         self.session = create_session(
             proxies=self.proxies, ca_cert=ca_cert, is_tls=False
         )
+        self.html_session = create_session(
+            proxies=self.proxies, ca_cert=ca_cert, is_tls=True
+        )
         self.scraper_input = None
         self.jobs_per_page = 100
         self.num_workers = 10
@@ -198,14 +201,17 @@ class Indeed(Scraper):
         """
         Falls back to fetching the job page and extracting the company name
         from the JSON-LD structured data when the API does not return one.
+        Uses a TLS session to avoid bot detection.
         """
         try:
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             }
-            response = self.session.get(job_url, headers=headers, timeout=10, verify=False)
+            response = self.html_session.get(job_url, headers=headers, timeout=10, verify=False)
             if not response.ok:
+                log.warning(f"_fetch_company_name: HTTP {response.status_code} for {job_url}")
                 return None
             matches = re.findall(
                 r'<script[^>]+type="application/ld\+json"[^>]*>(.*?)</script>',
@@ -220,8 +226,9 @@ class Indeed(Scraper):
                         return name
                 except (json.JSONDecodeError, AttributeError):
                     continue
-        except Exception:
-            pass
+            log.warning(f"_fetch_company_name: no hiringOrganization found in JSON-LD for {job_url}")
+        except Exception as e:
+            log.warning(f"_fetch_company_name: exception for {job_url}: {e}")
         return None
 
     def _process_job(self, job: dict) -> JobPost | None:
