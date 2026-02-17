@@ -49,6 +49,7 @@ class Indeed(Scraper):
         )
         # Proxy config for fallback retry if TLS session also gets blocked
         self._fallback_proxies = None
+        self._ca_cert = ca_cert if ca_cert else False
         if self.proxies:
             if isinstance(self.proxies, str):
                 self._fallback_proxies = {"http": self.proxies, "https": self.proxies}
@@ -227,7 +228,7 @@ class Indeed(Scraper):
                 log.info(f"_fetch_company_name: TLS got {response.status_code}, retrying with proxy for {job_url}")
                 response = req_lib.get(
                     job_url, headers=headers, proxies=self._fallback_proxies,
-                    timeout=10, verify=False
+                    timeout=10, verify=self._ca_cert
                 )
             if not response.ok:
                 log.warning(f"_fetch_company_name: HTTP {response.status_code} for {job_url}")
