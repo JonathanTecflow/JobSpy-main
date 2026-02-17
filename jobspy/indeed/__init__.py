@@ -223,7 +223,7 @@ class Indeed(Scraper):
             # If blocked, retry with TLS session + proxy (keeps browser fingerprint)
             if not response.ok and self.html_session_proxy:
                 log.info(f"_fetch_company_name: TLS got {response.status_code}, retrying with proxy for {job_url}")
-                response = self.html_session_proxy.get(job_url, headers=headers)
+                response = self.html_session_proxy.get(job_url, headers=headers, insecure_skip_verify=True)
             if not response.ok:
                 log.warning(f"_fetch_company_name: HTTP {response.status_code} for {job_url}")
                 return None
