@@ -18,6 +18,8 @@ from jobspy.model import (
     JobType,
     DescriptionFormat,
 )
+import requests as req_lib
+
 from jobspy.util import (
     extract_emails_from_text,
     markdown_converter,
@@ -37,12 +39,21 @@ class Indeed(Scraper):
         """
         super().__init__(Site.INDEED, proxies=proxies)
 
+        # Main session for GraphQL API — no proxy (datacenter IPs work fine)
         self.session = create_session(
-            proxies=self.proxies, ca_cert=ca_cert, is_tls=False
+            proxies=None, ca_cert=ca_cert, is_tls=False
         )
+        # TLS session without proxy for fallback (browser-like TLS fingerprint)
         self.html_session = create_session(
-            proxies=self.proxies, ca_cert=ca_cert, is_tls=True
+            proxies=None, ca_cert=ca_cert, is_tls=True
         )
+        # Proxy config for fallback retry if TLS session also gets blocked
+        self._fallback_proxies = None
+        if self.proxies:
+            if isinstance(self.proxies, str):
+                self._fallback_proxies = {"http": self.proxies, "https": self.proxies}
+            elif isinstance(self.proxies, list) and self.proxies:
+                self._fallback_proxies = {"http": self.proxies[0], "https": self.proxies[0]}
         self.scraper_input = None
         self.jobs_per_page = 100
         self.num_workers = 10
@@ -201,7 +212,7 @@ class Indeed(Scraper):
         """
         Falls back to fetching the job page and extracting the company name
         from the JSON-LD structured data when the API does not return one.
-        Uses a TLS session to avoid bot detection.
+        Tries without proxy first, falls back to proxy if blocked (403/401).
         """
         try:
             headers = {
@@ -209,7 +220,15 @@ class Indeed(Scraper):
                 "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             }
+            # Try with TLS session first (browser-like fingerprint, no proxy)
             response = self.html_session.get(job_url, headers=headers)
+            # If blocked, retry with proxy via plain requests
+            if not response.ok and self._fallback_proxies:
+                log.info(f"_fetch_company_name: TLS got {response.status_code}, retrying with proxy for {job_url}")
+                response = req_lib.get(
+                    job_url, headers=headers, proxies=self._fallback_proxies,
+                    timeout=10, verify=False
+                )
             if not response.ok:
                 log.warning(f"_fetch_company_name: HTTP {response.status_code} for {job_url}")
                 return None
