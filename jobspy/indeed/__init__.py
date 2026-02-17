@@ -18,7 +18,6 @@ from jobspy.model import (
     JobType,
     DescriptionFormat,
 )
-import requests as req_lib
 
 from jobspy.util import (
     extract_emails_from_text,
@@ -47,14 +46,12 @@ class Indeed(Scraper):
         self.html_session = create_session(
             proxies=None, ca_cert=ca_cert, is_tls=True
         )
-        # Proxy config for fallback retry if TLS session also gets blocked
-        self._fallback_proxies = None
-        self._ca_cert = ca_cert if ca_cert else False
+        # TLS session WITH proxy for second fallback attempt
+        self.html_session_proxy = None
         if self.proxies:
-            if isinstance(self.proxies, str):
-                self._fallback_proxies = {"http": self.proxies, "https": self.proxies}
-            elif isinstance(self.proxies, list) and self.proxies:
-                self._fallback_proxies = {"http": self.proxies[0], "https": self.proxies[0]}
+            self.html_session_proxy = create_session(
+                proxies=self.proxies, ca_cert=ca_cert, is_tls=True
+            )
         self.scraper_input = None
         self.jobs_per_page = 100
         self.num_workers = 10
@@ -223,13 +220,10 @@ class Indeed(Scraper):
             }
             # Try with TLS session first (browser-like fingerprint, no proxy)
             response = self.html_session.get(job_url, headers=headers)
-            # If blocked, retry with proxy via plain requests
-            if not response.ok and self._fallback_proxies:
+            # If blocked, retry with TLS session + proxy (keeps browser fingerprint)
+            if not response.ok and self.html_session_proxy:
                 log.info(f"_fetch_company_name: TLS got {response.status_code}, retrying with proxy for {job_url}")
-                response = req_lib.get(
-                    job_url, headers=headers, proxies=self._fallback_proxies,
-                    timeout=10, verify=self._ca_cert
-                )
+                response = self.html_session_proxy.get(job_url, headers=headers)
             if not response.ok:
                 log.warning(f"_fetch_company_name: HTTP {response.status_code} for {job_url}")
                 return None
