@@ -209,7 +209,7 @@ class Indeed(Scraper):
                 "Accept-Language": "de-DE,de;q=0.9,en;q=0.8",
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             }
-            response = self.html_session.get(job_url, headers=headers, timeout=10, verify=False)
+            response = self.html_session.get(job_url, headers=headers)
             if not response.ok:
                 log.warning(f"_fetch_company_name: HTTP {response.status_code} for {job_url}")
                 return None
